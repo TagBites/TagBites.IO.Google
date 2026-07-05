@@ -6,7 +6,7 @@
     <Product>TagBites.IO.Google</Product>
     <Title>TagBites.IO.Google</Title>
 
-    <Description></Description>
+    <Description>Google Cloud Storage file system support for TagBites.IO. Browse, read and write a Google Cloud Storage bucket through the same FileSystem API used for local disk and other storages.</Description>
     <PackageTags>file;files;system;filesystem;sync;C#;googlecloud;cloud;storage</PackageTags>
 
     <PackageProjectUrl>https://www.tagbites.com/io</PackageProjectUrl>
