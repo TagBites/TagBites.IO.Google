@@ -17,7 +17,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     private readonly string _bucketName;
     private readonly GoogleCredential _credential;
 
-    private StorageClient _storageClient;
+    private StorageClient? _storageClient;
 
     private const string ContentType = "application/x-directory";
     private const char DirectorySeparator = '/';
@@ -41,7 +41,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     }
 
 
-    public async Task<IFileSystemStructureLinkInfo> GetLinkInfoAsync(string fullName)
+    public async Task<IFileSystemStructureLinkInfo?> GetLinkInfoAsync(string fullName)
     {
         var client = await PrepareClientAsync();
 
@@ -65,7 +65,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
             }
         }
     }
-    private async Task<IFileSystemStructureLinkInfo> GetLinkInfoCoreAsync(string fullName)
+    private async Task<IFileSystemStructureLinkInfo?> GetLinkInfoCoreAsync(string fullName)
     {
         var client = await PrepareClientAsync();
         var info = await client.GetObjectAsync(_bucketName, fullName);
@@ -155,7 +155,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         options.RecursiveHandled = true;
 
         var isTruncated = true;
-        string continuationToken = null;
+        string? continuationToken = null;
         var result = new List<IFileSystemStructureLinkInfo>();
 
         var delimiter = !options.Recursive ? DirectorySeparatorString : null;
@@ -190,10 +190,11 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         var client = await PrepareClientAsync();
 
         var obj = await client.GetObjectAsync(_bucketName, link.FullName);
-        return GetInfo(obj);
+        // The object was just successfully fetched, so response is never null here.
+        return GetInfo(obj)!;
     }
 
-    private static IFileSystemStructureLinkInfo GetInfo(GoogleObject metadata)
+    private static IFileSystemStructureLinkInfo? GetInfo(GoogleObject metadata)
     {
         if (metadata == null)
             return null;
@@ -206,7 +207,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     private static DirectoryInfo GetDirectoryInfo(GoogleObject metadata) => new(metadata);
     private static FileInfo GetFileInfo(GoogleObject metadata) => new(metadata);
 
-    private string GetCorrectDirectoryFullName(string directoryFullName) => directoryFullName?.TrimEnd(DirectorySeparator) + DirectorySeparator;
+    private string GetCorrectDirectoryFullName(string directoryFullName) => directoryFullName.TrimEnd(DirectorySeparator) + DirectorySeparator;
     private async Task<StorageClient> PrepareClientAsync() => _storageClient ??= await StorageClient.CreateAsync(_credential);
 
     public void Dispose()
@@ -252,7 +253,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         public DirectoryInfo(GoogleObject metadata)
         {
             Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
-            FullName = metadata.Name?.TrimEnd(DirectorySeparator);
+            FullName = metadata.Name.TrimEnd(DirectorySeparator);
         }
     }
 }
