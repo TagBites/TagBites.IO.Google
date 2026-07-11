@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using Google;
@@ -48,7 +49,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         {
             return await GetLinkInfoCoreAsync(fullName);
         }
-        catch
+        catch (GoogleApiException e) when (e.HttpStatusCode == HttpStatusCode.NotFound)
         {
             if (Path.HasExtension(fullName))
                 return null;
@@ -58,7 +59,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
                 var correctFullName = GetCorrectDirectoryFullName(fullName);
                 return await GetLinkInfoCoreAsync(correctFullName);
             }
-            catch
+            catch (GoogleApiException ex) when (ex.HttpStatusCode == HttpStatusCode.NotFound)
             {
                 return null;
             }
