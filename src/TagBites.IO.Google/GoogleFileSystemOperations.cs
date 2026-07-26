@@ -186,9 +186,13 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
             var page = await result.ReadPageAsync(2);
             if (page.Any(x => x.Name != directoryFullName))
                 throw new IOException("Folder is not empty.");
+
+            await client.DeleteObjectAsync(_bucketName, directoryFullName);
+            return;
         }
 
-        await client.DeleteObjectAsync(_bucketName, directoryFullName);
+        await foreach (var item in ListObjectsAsync(directoryFullName))
+            await client.DeleteObjectAsync(_bucketName, item.Name);
     }
 
     public async Task<IList<IFileSystemStructureLinkInfo>> GetLinksAsync(DirectoryLink directory, FileSystem.ListingOptions options)
