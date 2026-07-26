@@ -119,7 +119,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         var result = await client.CopyObjectAsync(_bucketName, sourceFullName, _bucketName, destinationFullName);
         await client.DeleteObjectAsync(_bucketName, sourceFullName);
 
-        return new FileInfo(result);
+        return GetDirectoryInfo(result);
     }
     public async Task DeleteDirectoryAsync(DirectoryLink directory, bool recursive)
     {
