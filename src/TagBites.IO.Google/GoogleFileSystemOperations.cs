@@ -74,6 +74,9 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     }
     public async Task<IFileLinkInfo> WriteFileAsync(FileLink file, Stream stream, bool overwrite)
     {
+        if (!overwrite && await ObjectExistsAsync(file.FullName))
+            throw new IOException($"Unable to create a new file. File already exists: {file.FullName}");
+
         var client = await PrepareClientAsync();
         var result = await client.UploadObjectAsync(_bucketName, file.FullName, "application/octet-stream", stream);
 
@@ -81,12 +84,28 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     }
     public async Task<IFileLinkInfo> MoveFileAsync(FileLink source, FileLink destination, bool overwrite)
     {
+        if (!overwrite && await ObjectExistsAsync(destination.FullName))
+            throw new IOException($"Unable to move a new file. File already exists: {destination.FullName}");
+
         var client = await PrepareClientAsync();
 
         var result = await client.CopyObjectAsync(_bucketName, source.FullName, _bucketName, destination.FullName);
         await client.DeleteObjectAsync(_bucketName, source.FullName);
 
         return GetFileInfo(result);
+    }
+    private async Task<bool> ObjectExistsAsync(string fullName)
+    {
+        var client = await PrepareClientAsync();
+        try
+        {
+            await client.GetObjectAsync(_bucketName, fullName);
+            return true;
+        }
+        catch (GoogleApiException e) when (e.HttpStatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
     }
     public async Task DeleteFileAsync(FileLink file)
     {
