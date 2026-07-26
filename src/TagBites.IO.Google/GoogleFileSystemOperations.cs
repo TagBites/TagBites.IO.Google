@@ -287,8 +287,8 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         public string FullName { get; }
         public bool Exists => true;
         public bool? IsDirectory => false;
-        public DateTime? CreationTime => Metadata.TimeCreatedDateTimeOffset?.DateTime;
-        public DateTime? LastWriteTime => Metadata.UpdatedDateTimeOffset?.DateTime;
+        public DateTime? CreationTime => Metadata.TimeCreatedDateTimeOffset?.UtcDateTime;
+        public DateTime? LastWriteTime => Metadata.UpdatedDateTimeOffset?.UtcDateTime;
         public bool IsHidden => false;
         public bool IsReadOnly => false;
 
@@ -326,8 +326,8 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         public string FullName { get; }
         public bool Exists => true;
         public bool? IsDirectory => true;
-        public DateTime? CreationTime => Metadata?.TimeCreatedDateTimeOffset?.DateTime;
-        public DateTime? LastWriteTime => Metadata?.UpdatedDateTimeOffset?.DateTime;
+        public DateTime? CreationTime => Metadata?.TimeCreatedDateTimeOffset?.UtcDateTime;
+        public DateTime? LastWriteTime => Metadata?.UpdatedDateTimeOffset?.UtcDateTime;
         public bool IsHidden => false;
         public bool IsReadOnly => false;
 
