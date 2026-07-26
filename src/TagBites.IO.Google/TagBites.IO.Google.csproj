@@ -32,7 +32,6 @@
 
   <PropertyGroup>
     <RootNamespace>TagBites.IO.Google</RootNamespace>
-    <LangVersion>10</LangVersion>
   </PropertyGroup>
 
   <!-- References -->
