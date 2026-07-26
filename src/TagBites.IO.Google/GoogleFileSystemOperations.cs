@@ -11,6 +11,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
 {
     private readonly string _bucketName;
     private readonly GoogleCredential _credential;
+    private readonly SemaphoreSlim _clientLock = new(1, 1);
 
     private StorageClient? _storageClient;
 
@@ -256,11 +257,27 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     private static FileInfo GetFileInfo(GoogleObject metadata) => new(metadata);
 
     private string GetCorrectDirectoryFullName(string directoryFullName) => directoryFullName.TrimEnd(DirectorySeparator) + DirectorySeparator;
-    private async Task<StorageClient> PrepareClientAsync() => _storageClient ??= await StorageClient.CreateAsync(_credential);
+    private async Task<StorageClient> PrepareClientAsync()
+    {
+        if (_storageClient != null)
+            return _storageClient;
+
+        // Without the lock, concurrent callers each create a client and all but one leak.
+        await _clientLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            return _storageClient ??= await StorageClient.CreateAsync(_credential);
+        }
+        finally
+        {
+            _clientLock.Release();
+        }
+    }
 
     public void Dispose()
     {
         _storageClient?.Dispose();
+        _clientLock.Dispose();
     }
 
     private class FileInfo : IFileLinkInfo
