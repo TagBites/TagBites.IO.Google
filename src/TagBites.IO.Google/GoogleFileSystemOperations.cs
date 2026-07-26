@@ -135,10 +135,40 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         var client = await PrepareClientAsync();
         var sourceFullName = GetCorrectDirectoryFullName(source.FullName);
         var destinationFullName = GetCorrectDirectoryFullName(destination.FullName);
-        var result = await client.CopyObjectAsync(_bucketName, sourceFullName, _bucketName, destinationFullName);
-        await client.DeleteObjectAsync(_bucketName, sourceFullName);
+        // Cloud Storage has no atomic rename - a directory is a key prefix, so every object under it must be copied and removed.
+        GoogleObject? marker = null;
+        await foreach (var item in ListObjectsAsync(sourceFullName))
+        {
+            var destinationName = destinationFullName + item.Name.Substring(sourceFullName.Length);
+            var copy = await client.CopyObjectAsync(_bucketName, item.Name, _bucketName, destinationName);
+            await client.DeleteObjectAsync(_bucketName, item.Name);
 
-        return GetDirectoryInfo(result);
+            if (item.Name == sourceFullName)
+                marker = copy;
+        }
+
+        return marker != null
+            ? GetDirectoryInfo(marker)
+            : new DirectoryInfo(destination.FullName);
+    }
+    private async IAsyncEnumerable<GoogleObject> ListObjectsAsync(string prefix)
+    {
+        var client = await PrepareClientAsync();
+
+        // No delimiter, so this yields every descendant at any depth, including the prefix's own marker object.
+        string? pageToken = null;
+        do
+        {
+            var page = await client
+                .ListObjectsAsync(_bucketName, prefix, new ListObjectsOptions { PageToken = pageToken })
+                .ReadPageAsync(100);
+
+            foreach (var item in page)
+                yield return item;
+
+            pageToken = page.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
     }
     public async Task DeleteDirectoryAsync(DirectoryLink directory, bool recursive)
     {
@@ -254,13 +284,13 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     }
     private class DirectoryInfo : IFileSystemStructureLinkInfo
     {
-        private GoogleObject Metadata { get; }
+        private GoogleObject? Metadata { get; }
 
         public string FullName { get; }
         public bool Exists => true;
         public bool? IsDirectory => true;
-        public DateTime? CreationTime => Metadata.TimeCreatedDateTimeOffset?.DateTime;
-        public DateTime? LastWriteTime => Metadata.UpdatedDateTimeOffset?.DateTime;
+        public DateTime? CreationTime => Metadata?.TimeCreatedDateTimeOffset?.DateTime;
+        public DateTime? LastWriteTime => Metadata?.UpdatedDateTimeOffset?.DateTime;
         public bool IsHidden => false;
         public bool IsReadOnly => false;
 
@@ -269,6 +299,8 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
             Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
             FullName = metadata.Name.TrimEnd(DirectorySeparator);
         }
+        // A directory implied purely by a key prefix has no marker object to read timestamps from.
+        public DirectoryInfo(string fullName) => FullName = fullName.TrimEnd(DirectorySeparator);
     }
 }
 
