@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text;
 using Google;
 using Google.Apis.Auth.OAuth2;
 using Google.Cloud.Storage.V1;
@@ -39,8 +38,6 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
 
     public async Task<IFileSystemStructureLinkInfo?> GetLinkInfoAsync(string fullName)
     {
-        var client = await PrepareClientAsync();
-
         try
         {
             return await GetLinkInfoCoreAsync(fullName);
@@ -71,7 +68,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     public async Task ReadFileAsync(FileLink file, Stream stream)
     {
         var client = await PrepareClientAsync();
-        var _ = await client.DownloadObjectAsync(_bucketName, file.FullName, stream);
+        await client.DownloadObjectAsync(_bucketName, file.FullName, stream);
     }
     public async Task<IFileLinkInfo> WriteFileAsync(FileLink file, Stream stream, bool overwrite)
     {
@@ -125,7 +122,6 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     {
         var client = await PrepareClientAsync();
         var directoryFullName = GetCorrectDirectoryFullName(directory.FullName);
-        var content = Encoding.UTF8.GetBytes("");
 
         var result = await client.UploadObjectAsync(_bucketName, directoryFullName, ContentType, new MemoryStream(Array.Empty<byte>()));
 
