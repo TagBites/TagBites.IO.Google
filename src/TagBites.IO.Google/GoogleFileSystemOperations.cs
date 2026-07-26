@@ -283,7 +283,23 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         {
             Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
             FullName = metadata.Name;
-            Hash = new FileHash(FileHashAlgorithm.Md5, metadata.Md5Hash);
+            Hash = GetHash(metadata.Md5Hash);
+        }
+
+        // Cloud Storage returns the MD5 as base64 and omits it for composite objects, unlike the hex digest other providers expose.
+        private static FileHash GetHash(string? md5Base64)
+        {
+            if (string.IsNullOrEmpty(md5Base64))
+                return FileHash.Empty;
+
+            try
+            {
+                return new FileHash(FileHashAlgorithm.Md5, BitConverter.ToString(Convert.FromBase64String(md5Base64)));
+            }
+            catch (FormatException)
+            {
+                return FileHash.Empty;
+            }
         }
     }
     private class DirectoryInfo : IFileSystemStructureLinkInfo
