@@ -6,10 +6,11 @@ using TagBites.IO.Operations;
 using GoogleObject = Google.Apis.Storage.v1.Data.Object;
 
 namespace TagBites.IO.Google;
-internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFileSystemMetadataSupport, IDisposable
+
+internal class GoogleFileSystemOperations(GoogleCredential credential, string bucketName) : IFileSystemAsyncWriteOperations, IFileSystemFeatureSupport, IDisposable
 {
-    private readonly string _bucketName;
-    private readonly GoogleCredential _credential;
+    private readonly string _bucketName = bucketName ?? throw new ArgumentNullException(nameof(bucketName));
+    private readonly GoogleCredential _credential = credential ?? throw new ArgumentNullException(nameof(credential));
     private readonly SemaphoreSlim _clientLock = new(1, 1);
 
     private StorageClient? _storageClient;
@@ -21,19 +22,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     public string Kind => "google";
     public string Name => _bucketName;
 
-    #region IFileSystemOperationsMetadataSupport
-
-    bool IFileSystemMetadataSupport.SupportsIsHiddenMetadata => false;
-    bool IFileSystemMetadataSupport.SupportsIsReadOnlyMetadata => false;
-    bool IFileSystemMetadataSupport.SupportsLastWriteTimeMetadata => false;
-
-    #endregion
-
-    public GoogleFileSystemOperations(GoogleCredential credential, string bucketName)
-    {
-        _credential = credential ?? throw new ArgumentNullException(nameof(credential));
-        _bucketName = bucketName ?? throw new ArgumentNullException(nameof(bucketName));
-    }
+    FileSystemOperationsFeatures IFileSystemFeatureSupport.Features => FileSystemOperationsFeatures.ConcurrentWriteOperations | FileSystemOperationsFeatures.HierarchicalDirectories;
 
 
     public async Task<IFileSystemStructureLinkInfo?> GetLinkInfoAsync(string fullName)
@@ -123,7 +112,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         var client = await PrepareClientAsync();
         var directoryFullName = GetCorrectDirectoryFullName(directory.FullName);
 
-        var result = await client.UploadObjectAsync(_bucketName, directoryFullName, ContentType, new MemoryStream(Array.Empty<byte>()));
+        var result = await client.UploadObjectAsync(_bucketName, directoryFullName, ContentType, new MemoryStream([]));
 
         return GetDirectoryInfo(result);
     }
@@ -132,11 +121,11 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         var client = await PrepareClientAsync();
         var sourceFullName = GetCorrectDirectoryFullName(source.FullName);
         var destinationFullName = GetCorrectDirectoryFullName(destination.FullName);
-        // Cloud Storage has no atomic rename - a directory is a key prefix, so every object under it must be copied and removed.
+
         GoogleObject? marker = null;
         await foreach (var item in ListObjectsAsync(sourceFullName))
         {
-            var destinationName = destinationFullName + item.Name.Substring(sourceFullName.Length);
+            var destinationName = destinationFullName + item.Name[sourceFullName.Length..];
             var copy = await client.CopyObjectAsync(_bucketName, item.Name, _bucketName, destinationName);
             await client.DeleteObjectAsync(_bucketName, item.Name);
 
@@ -152,7 +141,6 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     {
         var client = await PrepareClientAsync();
 
-        // No delimiter, so this yields every descendant at any depth, including the prefix's own marker object.
         string? pageToken = null;
         do
         {
@@ -174,7 +162,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
 
         if (!recursive)
         {
-            var result = client.ListObjectsAsync(_bucketName, directoryFullName, new ListObjectsOptions()
+            var result = client.ListObjectsAsync(_bucketName, directoryFullName, new ListObjectsOptions
             {
                 Delimiter = DirectorySeparatorString,
                 IncludeTrailingDelimiter = true
@@ -206,7 +194,7 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         var delimiter = !options.Recursive ? DirectorySeparatorString : null;
         while (isTruncated)
         {
-            var listObjects = client.ListObjectsAsync(_bucketName, directoryFullName, new ListObjectsOptions()
+            var listObjects = client.ListObjectsAsync(_bucketName, directoryFullName, new ListObjectsOptions
             {
                 Delimiter = delimiter,
                 PageToken = continuationToken,
@@ -233,13 +221,12 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
     public async Task<IFileSystemStructureLinkInfo> UpdateMetadataAsync(FileSystemStructureLink link, IFileSystemLinkMetadata metadata)
     {
         var client = await PrepareClientAsync();
-
         var obj = await client.GetObjectAsync(_bucketName, link.FullName);
-        // The object was just successfully fetched, so response is never null here.
+
         return GetInfo(obj)!;
     }
 
-    private static IFileSystemStructureLinkInfo? GetInfo(GoogleObject metadata)
+    private static IFileSystemStructureLinkInfo? GetInfo(GoogleObject? metadata)
     {
         if (metadata == null)
             return null;
@@ -258,7 +245,6 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         if (_storageClient != null)
             return _storageClient;
 
-        // Without the lock, concurrent callers each create a client and all but one leak.
         await _clientLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -276,11 +262,11 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         _clientLock.Dispose();
     }
 
-    private class FileInfo : IFileLinkInfo
+    private class FileInfo(GoogleObject metadata) : IFileLinkInfo
     {
-        private GoogleObject Metadata { get; }
+        private GoogleObject Metadata { get; } = metadata ?? throw new ArgumentNullException(nameof(metadata));
 
-        public string FullName { get; }
+        public string FullName { get; } = metadata.Name;
         public bool Exists => true;
         public bool? IsDirectory => false;
         public DateTime? CreationTime => Metadata.TimeCreatedDateTimeOffset?.LocalDateTime;
@@ -289,17 +275,10 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
         public bool IsReadOnly => false;
 
         public string ContentPath => FullName;
-        public FileHash Hash { get; }
+        public FileHash Hash { get; } = GetHash(metadata.Md5Hash);
         public long Length => (long)(Metadata.Size ?? 0);
 
-        public FileInfo(GoogleObject metadata)
-        {
-            Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
-            FullName = metadata.Name;
-            Hash = GetHash(metadata.Md5Hash);
-        }
-
-        // Cloud Storage returns the MD5 as base64 and omits it for composite objects, unlike the hex digest other providers expose.
+        // Cloud Storage returns the MD5 as base64
         private static FileHash GetHash(string? md5Base64)
         {
             if (string.IsNullOrEmpty(md5Base64))
@@ -332,7 +311,6 @@ internal class GoogleFileSystemOperations : IFileSystemAsyncWriteOperations, IFi
             Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
             FullName = metadata.Name.TrimEnd(DirectorySeparator);
         }
-        // A directory implied purely by a key prefix has no marker object to read timestamps from.
         public DirectoryInfo(string fullName) => FullName = fullName.TrimEnd(DirectorySeparator);
     }
 }
