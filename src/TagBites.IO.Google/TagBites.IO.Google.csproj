@@ -16,6 +16,7 @@
     <Description>Google Cloud Storage file system support for TagBites.IO. Browse, read and write a Google Cloud Storage bucket through the same FileSystem API used for local disk and other storages.</Description>
     <PackageTags>file;files;filesystem;storage;sync;google-cloud-storage;gcs</PackageTags>
     <PackageProjectUrl>https://www.tagbites.com/io</PackageProjectUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
   </PropertyGroup>
 
   <!-- References -->
